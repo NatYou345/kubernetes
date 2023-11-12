@@ -14,5 +14,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: Setup Go environment
+      uses: actions/setup-go@v4.1.0
     - name: Build and run
-      run: make quick-release
+      run: make
