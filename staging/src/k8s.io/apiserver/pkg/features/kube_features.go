@@ -189,6 +189,12 @@ const (
 	// clients.
 	UnauthenticatedHTTP2DOSMitigation featuregate.Feature = "UnauthenticatedHTTP2DOSMitigation"
 
+	// owner: @jpbetz
+	// alpha: v1.30
+	// Resource create requests using generateName are retried automatically by the apiserver
+	// if the generated name conflicts with an existing resource name, up to a maximum number of 7 retries.
+	RetryGenerateName featuregate.Feature = "RetryGenerateName"
+
 	// owner: @caesarxuchao @roycaihw
 	// alpha: v1.20
 	//
@@ -247,6 +253,7 @@ const (
 
 	// owner: @tkashem
 	// beta: v1.29
+	// GA: v1.30
 	//
 	// Allow Priority & Fairness in the API server to use a zero value for
 	// the 'nominalConcurrencyShares' field of the 'limited' section of a
@@ -293,6 +300,8 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 
 	RemainingItemCount: {Default: true, PreRelease: featuregate.GA, LockToDefault: true}, // remove in 1.32
 
+	RetryGenerateName: {Default: false, PreRelease: featuregate.Alpha},
+
 	ServerSideApply: {Default: true, PreRelease: featuregate.GA, LockToDefault: true}, // remove in 1.29
 
 	ServerSideFieldValidation: {Default: true, PreRelease: featuregate.GA, LockToDefault: true}, // remove in 1.29
@@ -315,5 +324,5 @@ var defaultKubernetesFeatureGates = map[featuregate.Feature]featuregate.FeatureS
 
 	ConsistentListFromCache: {Default: false, PreRelease: featuregate.Alpha},
 
-	ZeroLimitedNominalConcurrencyShares: {Default: false, PreRelease: featuregate.Beta},
+	ZeroLimitedNominalConcurrencyShares: {Default: true, PreRelease: featuregate.GA, LockToDefault: true}, // remove in 1.32
 }
