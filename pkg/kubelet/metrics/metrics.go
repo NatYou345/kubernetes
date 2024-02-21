@@ -109,6 +109,10 @@ const (
 	CPUManagerPinningRequestsTotalKey = "cpu_manager_pinning_requests_total"
 	CPUManagerPinningErrorsTotalKey   = "cpu_manager_pinning_errors_total"
 
+	// Metrics to track the Memory manager behavior
+	MemoryManagerPinningRequestsTotalKey = "memory_manager_pinning_requests_total"
+	MemoryManagerPinningErrorsTotalKey   = "memory_manager_pinning_errors_total"
+
 	// Metrics to track the Topology manager behavior
 	TopologyManagerAdmissionRequestsTotalKey = "topology_manager_admission_requests_total"
 	TopologyManagerAdmissionErrorsTotalKey   = "topology_manager_admission_errors_total"
@@ -742,6 +746,25 @@ var (
 		},
 	)
 
+	// MemoryManagerPinningRequestTotal tracks the number of times the pod spec required the memory manager to pin memory pages
+	MemoryManagerPinningRequestTotal = metrics.NewCounter(
+		&metrics.CounterOpts{
+			Subsystem:      KubeletSubsystem,
+			Name:           MemoryManagerPinningRequestsTotalKey,
+			Help:           "The number of memory pages allocations which required pinning.",
+			StabilityLevel: metrics.ALPHA,
+		})
+
+	// MemoryManagerPinningErrorsTotal tracks the number of times the pod spec required the memory manager to pin memory pages, but the allocation failed
+	MemoryManagerPinningErrorsTotal = metrics.NewCounter(
+		&metrics.CounterOpts{
+			Subsystem:      KubeletSubsystem,
+			Name:           MemoryManagerPinningErrorsTotalKey,
+			Help:           "The number of memory pages allocations which required pinning that failed.",
+			StabilityLevel: metrics.ALPHA,
+		},
+	)
+
 	// TopologyManagerAdmissionRequestsTotal tracks the number of times the pod spec will cause the topology manager to admit a pod
 	TopologyManagerAdmissionRequestsTotal = metrics.NewCounter(
 		&metrics.CounterOpts{
@@ -837,13 +860,14 @@ var (
 		},
 	)
 
-	ImageGarbageCollectedTotal = metrics.NewCounter(
+	ImageGarbageCollectedTotal = metrics.NewCounterVec(
 		&metrics.CounterOpts{
 			Subsystem:      KubeletSubsystem,
 			Name:           ImageGarbageCollectedTotalKey,
 			Help:           "Total number of images garbage collected by the kubelet, whether through disk usage or image age.",
 			StabilityLevel: metrics.ALPHA,
 		},
+		[]string{"reason"},
 	)
 
 	// ImagePullDuration is a Histogram that tracks the duration (in seconds) it takes for an image to be pulled,
@@ -858,6 +882,15 @@ var (
 			StabilityLevel: metrics.ALPHA,
 		},
 		[]string{"image_size_in_bytes"},
+	)
+
+	LifecycleHandlerSleepTerminated = metrics.NewCounter(
+		&metrics.CounterOpts{
+			Subsystem:      KubeletSubsystem,
+			Name:           "sleep_action_terminated_early_total",
+			Help:           "The number of times lifecycle sleep handler got terminated before it finishes",
+			StabilityLevel: metrics.ALPHA,
+		},
 	)
 )
 
@@ -925,6 +958,10 @@ func Register(collectors ...metrics.StableCollector) {
 		legacyregistry.MustRegister(RunPodSandboxErrors)
 		legacyregistry.MustRegister(CPUManagerPinningRequestsTotal)
 		legacyregistry.MustRegister(CPUManagerPinningErrorsTotal)
+		if utilfeature.DefaultFeatureGate.Enabled(features.MemoryManager) {
+			legacyregistry.MustRegister(MemoryManagerPinningRequestTotal)
+			legacyregistry.MustRegister(MemoryManagerPinningErrorsTotal)
+		}
 		legacyregistry.MustRegister(TopologyManagerAdmissionRequestsTotal)
 		legacyregistry.MustRegister(TopologyManagerAdmissionErrorsTotal)
 		legacyregistry.MustRegister(TopologyManagerAdmissionDuration)
@@ -942,6 +979,7 @@ func Register(collectors ...metrics.StableCollector) {
 		}
 
 		legacyregistry.MustRegister(LifecycleHandlerHTTPFallbacks)
+		legacyregistry.MustRegister(LifecycleHandlerSleepTerminated)
 	})
 }
 
