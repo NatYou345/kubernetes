@@ -18,14 +18,12 @@ package apimachinery
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
 
 	admissionregistrationv1 "k8s.io/api/admissionregistration/v1"
-	admissionregistrationv1beta1 "k8s.io/api/admissionregistration/v1beta1"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -34,14 +32,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
-	"k8s.io/apiserver/pkg/features"
 	clientset "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/openapi3"
 	"k8s.io/kubernetes/test/e2e/framework"
 	admissionapi "k8s.io/pod-security-admission/api"
 )
 
-var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", framework.WithFeatureGate(features.ValidatingAdmissionPolicy), func() {
+var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", func() {
 	f := framework.NewDefaultFramework("validating-admission-policy")
 	f.NamespacePodSecurityLevel = admissionapi.LevelBaseline
 
@@ -52,11 +49,6 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 		var err error
 		client, err = clientset.NewForConfig(f.ClientConfig())
 		framework.ExpectNoError(err, "initializing client")
-		_, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().List(context.Background(), metav1.ListOptions{})
-		if apierrors.IsNotFound(err) {
-			// TODO: feature check should fail after GA graduation
-			ginkgo.Skip(fmt.Sprintf("server does not support ValidatingAdmissionPolicy v1beta1: %v, feature gate not enabled?", err))
-		}
 		extensionsClient, err = apiextensionsclientset.NewForConfig(f.ClientConfig())
 		framework.ExpectNoError(err, "initializing api-extensions client")
 	})
@@ -69,32 +61,38 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 		labelNamespace(ctx, f, f.Namespace.Name)
 	})
 
-	ginkgo.It("should validate against a Deployment", func(ctx context.Context) {
+	/*
+	   Release: v1.30
+	   Testname: ValidatingAdmissionPolicy
+	   Description:
+	   The ValidatingAdmissionPolicy should validate a deployment as the expression defined inside the policy.
+	*/
+	framework.ConformanceIt("should validate against a Deployment", func(ctx context.Context) {
 		ginkgo.By("creating the policy", func() {
 			policy := newValidatingAdmissionPolicyBuilder(f.UniqueName+".policy.example.com").
 				MatchUniqueNamespace(f.UniqueName).
 				StartResourceRule().
 				MatchResource([]string{"apps"}, []string{"v1"}, []string{"deployments"}).
 				EndResourceRule().
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression:        "object.spec.replicas > 1",
 					MessageExpression: "'wants replicas > 1, got ' + object.spec.replicas",
 				}).
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression: "namespaceObject.metadata.name == '" + f.UniqueName + "'",
 					Message:    "Internal error! Other namespace should not be allowed.",
 				}).
 				Build()
-			policy, err := client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
+			policy, err := client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
 			}, policy.Name)
 			binding := createBinding(f.UniqueName+".binding.example.com", f.UniqueName, policy.Name)
-			binding, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicyBindings().Create(ctx, binding, metav1.CreateOptions{})
+			binding, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Create(ctx, binding, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy binding")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicyBindings().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Delete(ctx, name, metav1.DeleteOptions{})
 			}, binding.Name)
 		})
 		ginkgo.By("waiting until the marker is denied", func() {
@@ -126,28 +124,34 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 		})
 	})
 
-	ginkgo.It("should type check validation expressions", func(ctx context.Context) {
-		var policy *admissionregistrationv1beta1.ValidatingAdmissionPolicy
+	/*
+	   Release: v1.30
+	   Testname: ValidatingAdmissionPolicy
+	   Description:
+	   The ValidatingAdmissionPolicy should type check the expressions defined inside policy.
+	*/
+	framework.ConformanceIt("should type check validation expressions", func(ctx context.Context) {
+		var policy *admissionregistrationv1.ValidatingAdmissionPolicy
 		ginkgo.By("creating the policy with correct types", func() {
 			policy = newValidatingAdmissionPolicyBuilder(f.UniqueName+".correct-policy.example.com").
 				MatchUniqueNamespace(f.UniqueName).
 				StartResourceRule().
 				MatchResource([]string{"apps"}, []string{"v1"}, []string{"deployments"}).
 				EndResourceRule().
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression: "object.spec.replicas > 1",
 				}).
 				Build()
 			var err error
-			policy, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
+			policy, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
 			}, policy.Name)
 		})
 		ginkgo.By("waiting for the type check to finish without any warnings", func() {
 			err := wait.PollUntilContextCancel(ctx, 100*time.Millisecond, true, func(ctx context.Context) (done bool, err error) {
-				policy, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
+				policy, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
 				if err != nil {
 					return false, err
 				}
@@ -165,21 +169,21 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 				StartResourceRule().
 				MatchResource([]string{"apps"}, []string{"v1"}, []string{"deployments"}).
 				EndResourceRule().
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression:        "object.spec.replicas > '1'",                        // confusion: int > string
 					MessageExpression: "'wants replicas > 1, got ' + object.spec.replicas", // confusion: string + int
 				}).
 				Build()
 			var err error
-			policy, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
+			policy, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
 			}, policy.Name)
 		})
 		ginkgo.By("waiting for the type check to finish with warnings", func() {
 			err := wait.PollUntilContextCancel(ctx, 100*time.Millisecond, true, func(ctx context.Context) (done bool, err error) {
-				policy, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
+				policy, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
 				if err != nil {
 					return false, err
 				}
@@ -201,38 +205,44 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 		})
 	})
 
-	ginkgo.It("should allow expressions to refer variables.", func(ctx context.Context) {
+	/*
+	   Release: v1.30
+	   Testname: ValidatingAdmissionPolicy
+	   Description:
+	   The ValidatingAdmissionPolicy should allow expressions to refer variables.
+	*/
+	framework.ConformanceIt("should allow expressions to refer variables.", func(ctx context.Context) {
 		ginkgo.By("creating a policy with variables", func() {
 			policy := newValidatingAdmissionPolicyBuilder(f.UniqueName+".policy.example.com").
 				MatchUniqueNamespace(f.UniqueName).
 				StartResourceRule().
 				MatchResource([]string{"apps"}, []string{"v1"}, []string{"deployments"}).
 				EndResourceRule().
-				WithVariable(admissionregistrationv1beta1.Variable{
+				WithVariable(admissionregistrationv1.Variable{
 					Name:       "replicas",
 					Expression: "object.spec.replicas",
 				}).
-				WithVariable(admissionregistrationv1beta1.Variable{
+				WithVariable(admissionregistrationv1.Variable{
 					Name:       "oddReplicas",
 					Expression: "variables.replicas % 2 == 1",
 				}).
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression: "variables.replicas > 1",
 				}).
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression: "variables.oddReplicas",
 				}).
 				Build()
-			policy, err := client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
+			policy, err := client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
 			}, policy.Name)
 			binding := createBinding(f.UniqueName+".binding.example.com", f.UniqueName, policy.Name)
-			binding, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicyBindings().Create(ctx, binding, metav1.CreateOptions{})
+			binding, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Create(ctx, binding, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy binding")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicyBindings().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicyBindings().Delete(ctx, name, metav1.DeleteOptions{})
 			}, binding.Name)
 		})
 		ginkgo.By("waiting until the marker is denied", func() {
@@ -264,11 +274,17 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 		})
 	})
 
-	ginkgo.It("should type check a CRD", func(ctx context.Context) {
+	/*
+	   Release: v1.30
+	   Testname: ValidatingAdmissionPolicy
+	   Description:
+	   The ValidatingAdmissionPolicy should type check a CRD.
+	*/
+	framework.ConformanceIt("should type check a CRD", func(ctx context.Context) {
 		crd := crontabExampleCRD()
 		crd.Spec.Group = "stable." + f.UniqueName
 		crd.Name = crd.Spec.Names.Plural + "." + crd.Spec.Group
-		var policy *admissionregistrationv1beta1.ValidatingAdmissionPolicy
+		var policy *admissionregistrationv1.ValidatingAdmissionPolicy
 		ginkgo.By("creating the CRD", func() {
 			var err error
 			crd, err = extensionsClient.ApiextensionsV1().CustomResourceDefinitions().Create(ctx, crd, metav1.CreateOptions{})
@@ -290,19 +306,19 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 				StartResourceRule().
 				MatchResource([]string{crd.Spec.Group}, []string{"v1"}, []string{"crontabs"}).
 				EndResourceRule().
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression: "object.spec.replicas > 1",
 				}).
 				Build()
-			policy, err := client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
+			policy, err := client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
 			}, policy.Name)
 		})
 		ginkgo.By("waiting for the type check to finish without warnings", func() {
 			err := wait.PollUntilContextCancel(ctx, 100*time.Millisecond, true, func(ctx context.Context) (done bool, err error) {
-				policy, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
+				policy, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
 				if err != nil {
 					return false, err
 				}
@@ -320,22 +336,22 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 				StartResourceRule().
 				MatchResource([]string{crd.Spec.Group}, []string{"v1"}, []string{"crontabs"}).
 				EndResourceRule().
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression: "object.spec.replicas > '1'", // type confusion
 				}).
-				WithValidation(admissionregistrationv1beta1.Validation{
+				WithValidation(admissionregistrationv1.Validation{
 					Expression: "object.spec.maxRetries < 10", // not yet existing field
 				}).
 				Build()
-			policy, err := client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
+			policy, err := client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Create(ctx, policy, metav1.CreateOptions{})
 			framework.ExpectNoError(err, "create policy")
 			ginkgo.DeferCleanup(func(ctx context.Context, name string) error {
-				return client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
+				return client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Delete(ctx, name, metav1.DeleteOptions{})
 			}, policy.Name)
 		})
 		ginkgo.By("waiting for the type check to finish with warnings", func() {
 			err := wait.PollUntilContextCancel(ctx, 100*time.Millisecond, true, func(ctx context.Context) (done bool, err error) {
-				policy, err = client.AdmissionregistrationV1beta1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
+				policy, err = client.AdmissionregistrationV1().ValidatingAdmissionPolicies().Get(ctx, policy.Name, metav1.GetOptions{})
 				if err != nil {
 					return false, err
 				}
@@ -357,17 +373,17 @@ var _ = SIGDescribe("ValidatingAdmissionPolicy [Privileged:ClusterAdmin]", frame
 	})
 })
 
-func createBinding(bindingName string, uniqueLabel string, policyName string) *admissionregistrationv1beta1.ValidatingAdmissionPolicyBinding {
-	return &admissionregistrationv1beta1.ValidatingAdmissionPolicyBinding{
+func createBinding(bindingName string, uniqueLabel string, policyName string) *admissionregistrationv1.ValidatingAdmissionPolicyBinding {
+	return &admissionregistrationv1.ValidatingAdmissionPolicyBinding{
 		ObjectMeta: metav1.ObjectMeta{Name: bindingName},
-		Spec: admissionregistrationv1beta1.ValidatingAdmissionPolicyBindingSpec{
+		Spec: admissionregistrationv1.ValidatingAdmissionPolicyBindingSpec{
 			PolicyName: policyName,
-			MatchResources: &admissionregistrationv1beta1.MatchResources{
+			MatchResources: &admissionregistrationv1.MatchResources{
 				NamespaceSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{uniqueLabel: "true"},
 				},
 			},
-			ValidationActions: []admissionregistrationv1beta1.ValidationAction{admissionregistrationv1beta1.Deny},
+			ValidationActions: []admissionregistrationv1.ValidationAction{admissionregistrationv1.Deny},
 		},
 	}
 }
@@ -427,17 +443,17 @@ func basicReplicaSet(name string, replicas int32) *appsv1.ReplicaSet {
 }
 
 type validatingAdmissionPolicyBuilder struct {
-	policy *admissionregistrationv1beta1.ValidatingAdmissionPolicy
+	policy *admissionregistrationv1.ValidatingAdmissionPolicy
 }
 
 type resourceRuleBuilder struct {
 	policyBuilder *validatingAdmissionPolicyBuilder
-	resourceRule  *admissionregistrationv1beta1.NamedRuleWithOperations
+	resourceRule  *admissionregistrationv1.NamedRuleWithOperations
 }
 
 func newValidatingAdmissionPolicyBuilder(policyName string) *validatingAdmissionPolicyBuilder {
 	return &validatingAdmissionPolicyBuilder{
-		policy: &admissionregistrationv1beta1.ValidatingAdmissionPolicy{
+		policy: &admissionregistrationv1.ValidatingAdmissionPolicy{
 			ObjectMeta: metav1.ObjectMeta{Name: policyName},
 		},
 	}
@@ -445,7 +461,7 @@ func newValidatingAdmissionPolicyBuilder(policyName string) *validatingAdmission
 
 func (b *validatingAdmissionPolicyBuilder) MatchUniqueNamespace(uniqueLabel string) *validatingAdmissionPolicyBuilder {
 	if b.policy.Spec.MatchConstraints == nil {
-		b.policy.Spec.MatchConstraints = &admissionregistrationv1beta1.MatchResources{}
+		b.policy.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{}
 	}
 	b.policy.Spec.MatchConstraints.NamespaceSelector = &metav1.LabelSelector{
 		MatchLabels: map[string]string{
@@ -458,10 +474,10 @@ func (b *validatingAdmissionPolicyBuilder) MatchUniqueNamespace(uniqueLabel stri
 func (b *validatingAdmissionPolicyBuilder) StartResourceRule() *resourceRuleBuilder {
 	return &resourceRuleBuilder{
 		policyBuilder: b,
-		resourceRule: &admissionregistrationv1beta1.NamedRuleWithOperations{
-			RuleWithOperations: admissionregistrationv1beta1.RuleWithOperations{
+		resourceRule: &admissionregistrationv1.NamedRuleWithOperations{
+			RuleWithOperations: admissionregistrationv1.RuleWithOperations{
 				Operations: []admissionregistrationv1.OperationType{admissionregistrationv1.Create, admissionregistrationv1.Update},
-				Rule: admissionregistrationv1beta1.Rule{
+				Rule: admissionregistrationv1.Rule{
 					APIGroups:   []string{"apps"},
 					APIVersions: []string{"v1"},
 					Resources:   []string{"deployments"},
@@ -477,7 +493,7 @@ func (rb *resourceRuleBuilder) CreateAndUpdate() *resourceRuleBuilder {
 }
 
 func (rb *resourceRuleBuilder) MatchResource(groups []string, versions []string, resources []string) *resourceRuleBuilder {
-	rb.resourceRule.Rule = admissionregistrationv1beta1.Rule{
+	rb.resourceRule.Rule = admissionregistrationv1.Rule{
 		APIGroups:   groups,
 		APIVersions: versions,
 		Resources:   resources,
@@ -488,23 +504,23 @@ func (rb *resourceRuleBuilder) MatchResource(groups []string, versions []string,
 func (rb *resourceRuleBuilder) EndResourceRule() *validatingAdmissionPolicyBuilder {
 	b := rb.policyBuilder
 	if b.policy.Spec.MatchConstraints == nil {
-		b.policy.Spec.MatchConstraints = &admissionregistrationv1beta1.MatchResources{}
+		b.policy.Spec.MatchConstraints = &admissionregistrationv1.MatchResources{}
 	}
 	b.policy.Spec.MatchConstraints.ResourceRules = append(b.policy.Spec.MatchConstraints.ResourceRules, *rb.resourceRule)
 	return b
 }
 
-func (b *validatingAdmissionPolicyBuilder) WithValidation(validation admissionregistrationv1beta1.Validation) *validatingAdmissionPolicyBuilder {
+func (b *validatingAdmissionPolicyBuilder) WithValidation(validation admissionregistrationv1.Validation) *validatingAdmissionPolicyBuilder {
 	b.policy.Spec.Validations = append(b.policy.Spec.Validations, validation)
 	return b
 }
 
-func (b *validatingAdmissionPolicyBuilder) WithVariable(variable admissionregistrationv1beta1.Variable) *validatingAdmissionPolicyBuilder {
+func (b *validatingAdmissionPolicyBuilder) WithVariable(variable admissionregistrationv1.Variable) *validatingAdmissionPolicyBuilder {
 	b.policy.Spec.Variables = append(b.policy.Spec.Variables, variable)
 	return b
 }
 
-func (b *validatingAdmissionPolicyBuilder) Build() *admissionregistrationv1beta1.ValidatingAdmissionPolicy {
+func (b *validatingAdmissionPolicyBuilder) Build() *admissionregistrationv1.ValidatingAdmissionPolicy {
 	return b.policy
 }
 
