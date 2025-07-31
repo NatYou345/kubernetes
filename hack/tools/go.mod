@@ -14,7 +14,7 @@ require (
 	golang.org/x/mod v0.24.0
 	golang.org/x/tools v0.32.0
 	google.golang.org/grpc/cmd/protoc-gen-go-grpc v1.5.1
-	google.golang.org/protobuf v1.36.4
+	google.golang.org/protobuf v1.36.6
 	gotest.tools/gotestsum v1.12.0
 	honnef.co/go/tools v0.6.1
 	k8s.io/publishing-bot v0.5.0
